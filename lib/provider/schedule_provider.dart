@@ -1,9 +1,7 @@
-import 'package:flutter_calendar_scheduler/database/drift_database.dart';
 import 'package:flutter_calendar_scheduler/model/schedule_model.dart';
 import 'package:flutter_calendar_scheduler/repository/schedule_repository.dart';
-
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:uuid/uuid.dart';
 
 class ScheduleProvider extends ChangeNotifier {
   final ScheduleRepository repository; // API 요청 로직을 담은 클래스
@@ -37,26 +35,47 @@ class ScheduleProvider extends ChangeNotifier {
     required ScheduleModel schedule,
   }) async {
     final targetDate = schedule.date;
-
-    final savedSchedule = await repository.createSchedule(schedule: schedule);
-
-    cache.update(
-      targetDate,
-      (value) => [
-        // 현존하는 캐시 리스트 끝에 새로운 일정 추가
-        ...value,
-        schedule.copyWith(
-          id: savedSchedule,
-        ),
-      ]..sort(
-          (a, b) => a.startTime.compareTo(
-            b.startTime,
-          ),
-        ),
-      ifAbsent: () => [schedule],
+    final uuid = Uuid();
+    final tempId = uuid.v4(); // 유일한 ID값을 생성합니다.
+    final newSchedule = schedule.copyWith(
+      id: tempId, // 임시 id를 지정합니다.
     );
+    // 긍정적 응답 구간입니다. 서버에서 응답을 받기 전에 캐시를 먼저 업데이트 합ㄴ디ㅏ.
+    cache.update(
+        targetDate,
+        (value) => [
+          ...value,
+          newSchedule,
+        ]..sort(
+            (a, b) => a.startTime.compareTo(
+              b.startTime,
+            ),
+        ),
+      ifAbsent: () => [newSchedule],
+    );
+    notifyListeners(); //캐시 업데이트 반영하기
+    try {
+      //API 요청합니다.
+      final savedSchedule = await repository.createSchedule(schedule: schedule);
+
+      cache.update(
+          targetDate,
+          (value) => value.map((e) => e.id == tempId
+              ? e.copyWith(
+            id: savedSchedule,
+          )
+          : e)
+          .toList(),
+      );
+    } catch (e) {
+      cache.update(
+          targetDate,
+          (value) => value.where((e) => e.id != tempId).toList(),
+      );
+    }
 
     notifyListeners();
+
   }
 
 
@@ -65,14 +84,38 @@ class ScheduleProvider extends ChangeNotifier {
     required DateTime date,
     required String id,
   }) async {
-    final resp = await repository.deleteSchedule(id: id);
+    final targetSchedule = cache[date]!.firstWhere(
+        (e) => e.id == id,
+    ); //삭제할 일정 기억
 
     cache.update(
       date,
       (value) => value.where((e) => e.id != id).toList(),
       ifAbsent: () => [],
-    );
+    ); // 긍정적 응다 (응답 전에 캐시 먼저 업데이트)
+    notifyListeners();
+
+    try {
+      await repository.deleteSchedule(id: id); // 삭제 함수 실행
+    } catch (e) {
+      // 삭제 실패 시 캐시 롤백하기
+      cache.update(
+        date,
+          (value) => [...value, targetSchedule]..sort(
+              (a, b) => a.startTime.compareTo(
+                b.startTime,
+              ),
+          ),
+      );
+    }
     notifyListeners();
 }
+
+  void changeSelectedDate({
+    required DateTime date,
+}) {
+    selectedDate = date; // 현재 선택된 날짜를 매개변수로 입력 받은 날짜로 변경
+    notifyListeners();
+  }
 
 }

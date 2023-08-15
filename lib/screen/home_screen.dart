@@ -4,8 +4,6 @@ import 'package:flutter_calendar_scheduler/component/schedule_card.dart';
 import 'package:flutter_calendar_scheduler/component/today_banner.dart';
 import 'package:flutter_calendar_scheduler/component/schedule_bottom_sheet.dart';
 import 'package:flutter_calendar_scheduler/const/colors.dart';
-import 'package:get_it/get_it.dart';
-import 'package:flutter_calendar_scheduler/database/drift_database.dart';
 import 'package:provider/provider.dart'; // Provider 불러오기
 import 'package:flutter_calendar_scheduler/provider/schedule_provider.dart';
 
@@ -60,7 +58,8 @@ class HomeScreen extends StatelessWidget {
             MainCalendar(
             selectedDate: selectedDate, // 선택된 날짜 전달하기
             //날짜가 선택됐을 때 실행할 함수
-            onDaySelected: onDaySelected,
+            onDaySelected: (selectedDate, focusedDate) =>
+              onDaySelected(selectedDate, focusedDate, context),
           ),
           SizedBox(height: 8.0),
           TodayBanner(
@@ -108,7 +107,16 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  void onDaySelected(DateTime selectedDate, DateTime focusedDate) {
+  void onDaySelected(
+      DateTime selectedDate,
+      DateTime focusedDate,
+      BuildContext context,
+      ) {
+    final provider = context.read<ScheduleProvider>();
+    provider.changeSelectedDate(
+      date: selectedDate,
+    );
+    provider.getSchedules(date: selectedDate);
     // 날짜 선택될 때마다 실행할 함수
 
   }
